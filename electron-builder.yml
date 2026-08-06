@@ -1,0 +1,47 @@
+appId: com.selene.devapp
+productName: DevApp
+directories:
+  buildResources: build
+  output: release
+
+files:
+  - out/**
+  - package.json
+  - '!**/*.map'
+
+# node-pty es nativo: sus binarios tienen que quedar fuera del asar para
+# poder ejecutarse (incluye conpty.dll y winpty-agent.exe en Windows).
+asarUnpack:
+  - '**/node_modules/node-pty/**'
+
+mac:
+  target:
+    - target: dmg
+      arch: [arm64, x64]
+    - target: zip
+      arch: [arm64, x64]
+  category: public.app-category.developer-tools
+  darkModeSupport: true
+  # Sin firmar: la app es de uso propio. Para distribuirla hay que
+  # configurar identity + notarización.
+  identity: null
+
+dmg:
+  artifactName: ${productName}-${version}-${arch}.${ext}
+
+win:
+  target:
+    - target: nsis
+      arch: [x64, arm64]
+  artifactName: ${productName}-${version}-${arch}-setup.${ext}
+
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  perMachine: false
+  createDesktopShortcut: true
+  shortcutName: DevApp
+
+linux:
+  target: [AppImage]
+  category: Development
