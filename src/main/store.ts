@@ -1,7 +1,10 @@
 import { app } from 'electron'
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
-import { basename, join } from 'node:path'
+import { basename, dirname, join } from 'node:path'
 import type { Folder, Project, Task, TaskStep, Workspace } from '../shared/types'
+
+/** Nombres de userData de antes del rebranding a Selene. */
+const LEGACY_APP_DIRS = ['devapp', 'DevApp']
 
 function storePath(): string {
   const dir = app.getPath('userData')
@@ -9,13 +12,27 @@ function storePath(): string {
   return join(dir, 'workspace.json')
 }
 
+/**
+ * Al renombrar la app cambia la carpeta de userData: sin esto, quien venía
+ * usándola como DevApp abriría Selene con la lista de proyectos vacía.
+ */
+function legacyStorePath(): string | null {
+  const parent = dirname(app.getPath('userData'))
+  for (const name of LEGACY_APP_DIRS) {
+    const candidate = join(parent, name, 'workspace.json')
+    if (existsSync(candidate)) return candidate
+  }
+  return null
+}
+
 function id(prefix: string): string {
   return `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`
 }
 
 function read(): Workspace {
-  const file = storePath()
-  if (!existsSync(file)) return { projects: [], folders: [], tasks: [] }
+  const own = storePath()
+  const file = existsSync(own) ? own : legacyStorePath()
+  if (!file) return { projects: [], folders: [], tasks: [] }
   try {
     const parsed = JSON.parse(readFileSync(file, 'utf8')) as Partial<Workspace>
     return {

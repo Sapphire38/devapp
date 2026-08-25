@@ -2,6 +2,7 @@ import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron'
 import { existsSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { readDirectory, searchFiles } from './files'
 import { buildMenu } from './menu'
 import { inspectProject } from './projects'
 import {
@@ -26,7 +27,7 @@ import {
   resizeSession,
   writeSession
 } from './terminals'
-import type { SessionOptions, TaskStep } from '../shared/types'
+import type { FileSearchOptions, SessionOptions, TaskStep } from '../shared/types'
 
 const __dirname_ = fileURLToPath(new URL('.', import.meta.url))
 
@@ -142,8 +143,22 @@ function registerIpc(): void {
 
   ipcMain.handle('project:inspect', (_event, path: string) => inspectProject(path))
 
+  ipcMain.handle('files:read', (_event, path: string) => readDirectory(path))
+  ipcMain.handle('files:search', (_event, options: FileSearchOptions) => searchFiles(options))
+
   ipcMain.handle('shell:reveal', (_event, path: string) => {
     if (isDirectory(path)) shell.openPath(path)
+  })
+
+  /** Muestra el archivo seleccionado dentro de su carpeta, en el explorador del SO. */
+  ipcMain.handle('shell:revealItem', (_event, path: string) => {
+    if (existsSync(path)) shell.showItemInFolder(path)
+  })
+
+  /** Abre el archivo con la app que tenga asociada el SO (el editor, casi siempre). */
+  ipcMain.handle('shell:open', async (_event, path: string) => {
+    if (!existsSync(path)) return 'No existe'
+    return shell.openPath(path)
   })
 
   ipcMain.handle('session:create', (event, options: SessionOptions) => {

@@ -1,7 +1,7 @@
 {
-  "name": "devapp",
+  "name": "selene",
   "version": "0.1.0",
-  "description": "Gestor de carpetas de proyectos con terminal integrada",
+  "description": "Selene — explorador de proyectos con terminal integrada",
   "main": "./out/main/index.js",
   "type": "module",
   "author": "Juani",

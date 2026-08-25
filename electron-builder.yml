@@ -1,5 +1,5 @@
-appId: com.selene.devapp
-productName: DevApp
+appId: com.selene.dev
+productName: Selene
 directories:
   buildResources: build
   output: release
@@ -40,7 +40,7 @@ nsis:
   allowToChangeInstallationDirectory: true
   perMachine: false
   createDesktopShortcut: true
-  shortcutName: DevApp
+  shortcutName: Selene
 
 linux:
   target: [AppImage]

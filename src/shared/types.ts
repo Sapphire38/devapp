@@ -49,6 +49,52 @@ export interface ProjectInfo {
   nodeFiles: string[]
 }
 
+/** Una entrada del explorador de archivos. */
+export interface DirEntry {
+  name: string
+  /** Ruta absoluta. */
+  path: string
+  isDirectory: boolean
+  /** Carpeta pesada (node_modules, .git, dist…): el buscador no entra ahí. */
+  skipped: boolean
+}
+
+export type SearchMode = 'name' | 'content'
+
+export interface SearchRoot {
+  id: string
+  name: string
+  path: string
+}
+
+export interface FileSearchOptions {
+  roots: SearchRoot[]
+  query: string
+  mode: SearchMode
+  caseSensitive?: boolean
+}
+
+export interface FileSearchHit {
+  rootId: string
+  rootName: string
+  /** Ruta absoluta del archivo. */
+  path: string
+  /** Ruta relativa a la carpeta raíz; es lo que se muestra. */
+  relPath: string
+  /** Solo en búsqueda por contenido: línea (1-based) y su recorte. */
+  line?: number
+  preview?: string
+  matchStart?: number
+  matchLength?: number
+}
+
+export interface FileSearchResult {
+  hits: FileSearchHit[]
+  /** Se cortó por límite de resultados, de archivos o de tiempo. */
+  truncated: boolean
+  scanned: number
+}
+
 export interface SessionOptions {
   cwd: string
   /** Comando a ejecutar en vez de abrir una shell interactiva. */

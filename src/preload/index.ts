@@ -1,6 +1,9 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import type { AppInfo, DevAppApi, MenuAction } from '../shared/api'
 import type {
+  DirEntry,
+  FileSearchOptions,
+  FileSearchResult,
   ProjectInfo,
   SessionCreated,
   SessionOptions,
@@ -43,7 +46,17 @@ const api: DevAppApi = {
     inspect: (path: string): Promise<ProjectInfo> => ipcRenderer.invoke('project:inspect', path)
   },
 
+  files: {
+    read: (path: string): Promise<DirEntry[]> => ipcRenderer.invoke('files:read', path),
+    search: (options: FileSearchOptions): Promise<FileSearchResult> =>
+      ipcRenderer.invoke('files:search', options)
+  },
+
   reveal: (path: string): Promise<void> => ipcRenderer.invoke('shell:reveal', path),
+
+  revealItem: (path: string): Promise<void> => ipcRenderer.invoke('shell:revealItem', path),
+
+  openPath: (path: string): Promise<string> => ipcRenderer.invoke('shell:open', path),
 
   pathsFromDrop: (files: File[]): string[] =>
     files.map((file) => webUtils.getPathForFile(file)).filter(Boolean),

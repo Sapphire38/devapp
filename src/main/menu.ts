@@ -40,8 +40,9 @@ export function buildMenu(): void {
         },
         { type: 'separator' },
         {
+          // ⌘T queda para el buscador rápido, como en cualquier editor.
           label: 'Nueva terminal',
-          accelerator: 'CmdOrCtrl+T',
+          accelerator: 'CmdOrCtrl+Alt+T',
           click: () => send('new-terminal')
         },
         {
@@ -71,8 +72,28 @@ export function buildMenu(): void {
       ]
     },
     {
+      label: 'Buscar',
+      submenu: [
+        {
+          label: 'Buscar archivo o texto…',
+          accelerator: 'CmdOrCtrl+T',
+          click: () => send('quick-search')
+        },
+        {
+          label: 'Buscar en el explorador',
+          accelerator: 'CmdOrCtrl+F',
+          click: () => send('focus-search')
+        }
+      ]
+    },
+    {
       label: 'Ver',
       submenu: [
+        {
+          label: 'Explorador de archivos',
+          accelerator: 'CmdOrCtrl+E',
+          click: () => send('toggle-explorer')
+        },
         {
           label: 'Panel de scripts',
           accelerator: 'CmdOrCtrl+B',

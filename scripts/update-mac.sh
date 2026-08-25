@@ -1,17 +1,17 @@
 #!/usr/bin/env bash
 # Recompila la app y reemplaza la copia instalada en /Applications.
-# Los datos del usuario viven en ~/Library/Application Support/devapp y no se tocan.
+# Los datos del usuario viven en ~/Library/Application Support/selene y no se tocan.
 set -euo pipefail
 
-APP="/Applications/DevApp.app"
-DATA="$HOME/Library/Application Support/devapp"
+APP="/Applications/Selene.app"
+DATA="$HOME/Library/Application Support/selene"
 
 if [ "$(uname -m)" = "arm64" ]; then
   ARCH="--arm64"
-  BUILT="release/mac-arm64/DevApp.app"
+  BUILT="release/mac-arm64/Selene.app"
 else
   ARCH="--x64"
-  BUILT="release/mac/DevApp.app"
+  BUILT="release/mac/Selene.app"
 fi
 
 echo "▸ Compilando…"
@@ -33,6 +33,8 @@ if [ -f "$DATA/workspace.json" ]; then
 fi
 
 echo "▸ Cerrando la app si está abierta…"
+osascript -e 'tell application "Selene" to quit' >/dev/null 2>&1 || true
+# La versión anterior se llamaba DevApp: si quedó abierta, también hay que cerrarla.
 osascript -e 'tell application "DevApp" to quit' >/dev/null 2>&1 || true
 sleep 1
 

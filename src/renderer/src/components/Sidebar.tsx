@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import SeleneLogo from './SeleneLogo'
 import type { Folder, Project, Selection, Workspace } from '../../../shared/types'
 
 const DND_TYPE = 'application/devapp-folder'
@@ -237,8 +238,8 @@ export default function Sidebar({
     <aside className="sidebar">
       <div className="sidebar-head">
         <div className="brand">
-          <span className="brand-dot" />
-          DevApp
+          <SeleneLogo />
+          <span className="brand-sub">dev</span>
         </div>
       </div>
 

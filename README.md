@@ -1,13 +1,16 @@
-# DevApp
+# Selene
 
 App de escritorio (macOS y Windows) para tener tus carpetas de proyectos a mano,
-abrir una terminal real en cualquiera de ellas y correr scripts de node con un click.
+recorrer sus archivos, buscar en ellos, abrir una terminal real en cualquiera y
+correr scripts de node con un click.
 
 ## Qué hace
 
 - **Carpetas**: agregalas con el diálogo nativo o arrastrándolas a la ventana. Quedan guardadas entre sesiones.
+- **Explorador de archivos**: el árbol de cada carpeta del proyecto, expandible por nivel. Doble click abre el archivo en el editor del sistema, y cualquier subcarpeta puede abrir su propia terminal.
+- **Buscador (`Cmd/Ctrl + T`)**: busca por nombre de archivo o por contenido en todas las carpetas del proyecto. `Tab` alterna entre los dos modos. Ignora `node_modules`, `.git`, `dist`, `out` y compañía.
 - **Proyectos**: agrupá dos o más carpetas (API + cliente + workers) y abrí **una terminal en cada una** con un solo botón.
-- **Conjuntos de scripts**: dentro de un proyecto, definí una combinación de comandos — `npm run dev` en la API, `npm start` en el cliente, lo que sea — y lanzalos todos de un click, cada uno en su carpeta y su propia terminal. Se guardan con el proyecto.
+- **Conjuntos de scripts**: dentro de un proyecto, definí una combinación de comandos — `npm run dev` en la API, `npm start` en el cliente, lo que sea — y lanzalos todos de un click, cada uno en su carpeta y su propia terminal. Se guardan con el proyecto. El botón **■** frena de una todas las terminales que largó el conjunto.
 - **Terminal real**: shell interactiva con TTY (`node-pty` + `xterm.js`), no un log de salida. Colores, `top`, `vim`, autocompletado, todo.
 - **Scripts**: lee `package.json` y muestra cada script como un chip; detecta el gestor de paquetes (npm/yarn/pnpm/bun) por el lockfile.
 - **Archivos node**: lista los `.js`/`.mjs`/`.ts` de la raíz y de `scripts/` para ejecutarlos directo.
@@ -38,10 +41,11 @@ npm run update:mac
 
 Compila, respalda `workspace.json`, cierra la app si está abierta y reemplaza la de
 `/Applications`. Las carpetas, proyectos y conjuntos se conservan: viven en
-`~/Library/Application Support/devapp/`, fuera del `.app`.
+`~/Library/Application Support/selene/`, fuera del `.app`.
 
-Esa ruta la determina el campo `name` de `package.json` (`devapp`), **no**
-`productName`. Si se cambia `name`, la app arranca sin datos.
+Esa ruta la determina el campo `name` de `package.json` (`selene`), **no**
+`productName`. Si se cambia `name`, la app arranca sin datos — por eso `store.ts`
+lee como respaldo la carpeta vieja (`devapp`) cuando todavía no existe la nueva.
 
 ## Empaquetado
 
@@ -71,6 +75,7 @@ src/
   main/        proceso principal: ventana, menú, IPC, store y sesiones de terminal
     terminals.ts   node-pty, con fallback por pipes si el módulo nativo no carga
     projects.ts    inspección de una carpeta (scripts, lockfile, rama de git)
+    files.ts       listado del árbol y búsqueda por nombre o contenido
     store.ts       persistencia de carpetas y proyectos en workspace.json
   preload/     bridge con contextIsolation; expone window.api
   renderer/    UI en React
@@ -98,8 +103,11 @@ Ese comando usa node-gyp, que **falla si la ruta del proyecto tiene espacios**.
 | --- | --- |
 | `Cmd/Ctrl + O` | Agregar carpeta |
 | `Cmd/Ctrl + Shift + N` | Nuevo proyecto |
-| `Cmd/Ctrl + T` | Nueva terminal |
+| `Cmd/Ctrl + T` | Buscar archivo o texto (`Tab` alterna nombre / contenido) |
+| `Cmd/Ctrl + F` | Buscar desde el explorador |
+| `Cmd/Ctrl + E` | Mostrar/ocultar el explorador de archivos |
+| `Cmd/Ctrl + Alt + T` | Nueva terminal |
 | `Cmd/Ctrl + Shift + T` | Terminal en todas las carpetas del proyecto |
 | `Cmd/Ctrl + W` | Cerrar pestaña |
-| `Cmd/Ctrl + B` | Mostrar/ocultar el panel de scripts |
+| `Cmd/Ctrl + B` | Mostrar/ocultar el panel de scripts (arranca oculto) |
 | `Cmd/Ctrl + K` | Limpiar la terminal |

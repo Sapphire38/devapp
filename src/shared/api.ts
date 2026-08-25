@@ -1,4 +1,13 @@
-import type { ProjectInfo, SessionCreated, SessionOptions, TaskStep, Workspace } from './types'
+import type {
+  DirEntry,
+  FileSearchOptions,
+  FileSearchResult,
+  ProjectInfo,
+  SessionCreated,
+  SessionOptions,
+  TaskStep,
+  Workspace
+} from './types'
 
 export interface AppInfo {
   platform: NodeJS.Platform
@@ -13,6 +22,9 @@ export type MenuAction =
   | 'open-all-terminals'
   | 'close-tab'
   | 'toggle-panel'
+  | 'toggle-explorer'
+  | 'quick-search'
+  | 'focus-search'
 
 /** Contrato del bridge expuesto por el preload en `window.api`. */
 export interface DevAppApi {
@@ -39,7 +51,19 @@ export interface DevAppApi {
     inspect(path: string): Promise<ProjectInfo>
   }
 
+  files: {
+    /** Contenido de una carpeta: el árbol se carga por nivel, no de una. */
+    read(path: string): Promise<DirEntry[]>
+    search(options: FileSearchOptions): Promise<FileSearchResult>
+  }
+
   reveal(path: string): Promise<void>
+
+  /** Muestra un archivo dentro de su carpeta en Finder/Explorador. */
+  revealItem(path: string): Promise<void>
+
+  /** Abre el archivo con la app asociada del sistema. Devuelve el error si falla. */
+  openPath(path: string): Promise<string>
 
   /** Resuelve rutas reales de archivos soltados sobre la ventana (drag & drop). */
   pathsFromDrop(files: File[]): string[]

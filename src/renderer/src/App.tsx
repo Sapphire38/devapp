@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import FileTree from './components/FileTree'
 import ProjectPanel, { type PanelEntry } from './components/ProjectPanel'
+import QuickSearch from './components/QuickSearch'
 import Sidebar from './components/Sidebar'
 import TaskBar from './components/TaskBar'
 import TaskEditor from './components/TaskEditor'
@@ -21,6 +23,8 @@ interface Tab {
   cwd: string
   title: string
   command?: string
+  /** Conjunto que la lanzó, para poder detenerlas todas juntas. */
+  taskId?: string
   /** Se incrementa al reiniciar: fuerza el remonte de la terminal. */
   generation: number
   sessionId: string | null
@@ -42,7 +46,12 @@ export default function App(): React.JSX.Element {
   const [missingIds, setMissingIds] = useState<Set<string>>(new Set())
   const [tabs, setTabs] = useState<Tab[]>([])
   const [activeTabByScope, setActiveTabByScope] = useState<Record<string, string>>({})
-  const [panelOpen, setPanelOpen] = useState(true)
+  // El panel de scripts es una ayuda puntual: arranca cerrado para no comerse
+  // el alto de la terminal. El explorador, en cambio, es el mapa del proyecto.
+  const [panelOpen, setPanelOpen] = useState(false)
+  const [explorerOpen, setExplorerOpen] = useState(true)
+  const [searchFocus, setSearchFocus] = useState(0)
+  const [quickOpen, setQuickOpen] = useState(false)
   const [dragging, setDragging] = useState(false)
   /** `undefined` = editor cerrado; `null` = creando uno nuevo. */
   const [editingTask, setEditingTask] = useState<Task | null | undefined>(undefined)
@@ -81,6 +90,16 @@ export default function App(): React.JSX.Element {
     const counts: Record<string, number> = {}
     for (const tab of tabs) {
       if (tab.exitCode === null) counts[tab.folderId] = (counts[tab.folderId] ?? 0) + 1
+    }
+    return counts
+  }, [tabs])
+
+  const runningByTask = useMemo(() => {
+    const counts: Record<string, number> = {}
+    for (const tab of tabs) {
+      if (tab.taskId && tab.exitCode === null) {
+        counts[tab.taskId] = (counts[tab.taskId] ?? 0) + 1
+      }
     }
     return counts
   }, [tabs])
@@ -183,11 +202,12 @@ export default function App(): React.JSX.Element {
   /* ---------- pestañas ---------- */
 
   const makeTab = useCallback(
-    (folder: Folder, command?: string, title?: string): Tab => ({
+    (folder: Folder, command?: string, title?: string, cwd?: string): Tab => ({
       id: nextTabId(),
       folderId: folder.id,
       folderName: folder.name,
-      cwd: folder.path,
+      // El explorador puede pedir una terminal parada en una subcarpeta.
+      cwd: cwd ?? folder.path,
       title: title ?? (info?.platform === 'win32' ? 'powershell' : 'shell'),
       command,
       generation: 0,
@@ -208,8 +228,8 @@ export default function App(): React.JSX.Element {
   )
 
   const openTab = useCallback(
-    (folder: Folder, command?: string, title?: string): void => {
-      pushTabs([makeTab(folder, command, title)])
+    (folder: Folder, command?: string, title?: string, cwd?: string): void => {
+      pushTabs([makeTab(folder, command, title, cwd)])
     },
     [makeTab, pushTabs]
   )
@@ -223,11 +243,25 @@ export default function App(): React.JSX.Element {
     (task: Task) => {
       const created = task.steps.flatMap((step) => {
         const folder = workspace.folders.find((f) => f.id === step.folderId)
-        return folder ? [makeTab(folder, step.command, step.label ?? step.command)] : []
+        if (!folder) return []
+        return [{ ...makeTab(folder, step.command, step.label ?? step.command), taskId: task.id }]
       })
       pushTabs(created)
     },
     [workspace.folders, makeTab, pushTabs]
+  )
+
+  /**
+   * Frena las terminales vivas de un conjunto. Las pestañas quedan abiertas con
+   * su salida: desde el pie de la terminal se reinician o se cierran.
+   */
+  const stopTask = useCallback(
+    (taskId: string) => {
+      for (const tab of tabs) {
+        if (tab.taskId === taskId && tab.sessionId) window.api.session.kill(tab.sessionId)
+      }
+    },
+    [tabs]
   )
 
   const closeTab = useCallback((tabId: string) => {
@@ -268,6 +302,12 @@ export default function App(): React.JSX.Element {
       else if (action === 'open-all-terminals') openAllTerminals()
       else if (action === 'close-tab' && activeTabId) closeTab(activeTabId)
       else if (action === 'toggle-panel') setPanelOpen((v) => !v)
+      else if (action === 'toggle-explorer') setExplorerOpen((v) => !v)
+      else if (action === 'quick-search') setQuickOpen(scopeFolders.length > 0)
+      else if (action === 'focus-search') {
+        setExplorerOpen(true)
+        setSearchFocus((n) => n + 1)
+      }
     })
   }, [
     addFolder,
@@ -391,6 +431,13 @@ export default function App(): React.JSX.Element {
               </div>
 
               <div className="head-actions">
+                <button
+                  className={`btn ghost sm${explorerOpen ? ' on' : ''}`}
+                  title="Explorador de archivos (⌘E)"
+                  onClick={() => setExplorerOpen((v) => !v)}
+                >
+                  Archivos
+                </button>
                 <button className="btn ghost sm" onClick={() => setPanelOpen((v) => !v)}>
                   {panelOpen ? 'Ocultar scripts' : 'Ver scripts'}
                 </button>
@@ -430,7 +477,9 @@ export default function App(): React.JSX.Element {
               <TaskBar
                 tasks={projectTasks}
                 folders={scopeFolders}
+                runningByTask={runningByTask}
                 onRun={runTask}
+                onStop={stopTask}
                 onEdit={(task) => setEditingTask(task)}
                 onRemove={(taskId) =>
                   void window.api.workspace.removeTask(taskId).then(applyWorkspace)
@@ -448,106 +497,119 @@ export default function App(): React.JSX.Element {
               />
             )}
 
-            <div className="tabs">
-              {visibleTabs.map((tab) => (
-                <div
-                  key={tab.id}
-                  className={`tab${tab.id === activeTabId ? ' active' : ''}${
-                    tab.exitCode !== null ? ' exited' : ''
-                  }`}
-                  role="button"
-                  tabIndex={0}
-                  title={`${tab.folderName} · ${tab.command ?? tab.title}`}
-                  onClick={() => setActiveTabByScope((prev) => ({ ...prev, [key]: tab.id }))}
-                  onKeyDown={(event) => {
-                    if (event.key === 'Enter')
-                      setActiveTabByScope((prev) => ({ ...prev, [key]: tab.id }))
-                  }}
-                >
-                  <span className="tab-dot" />
-                  {activeProject && <span className="tab-scope">{tab.folderName}</span>}
-                  <span className="tab-title">{tab.title}</span>
-                  <button
-                    className="tab-close"
-                    title="Cerrar pestaña"
-                    onClick={(event) => {
-                      event.stopPropagation()
-                      closeTab(tab.id)
-                    }}
-                  >
-                    ×
-                  </button>
-                </div>
-              ))}
-              {scopeFolders.length > 0 && (
-                <button
-                  className="tab-add"
-                  title="Nueva terminal"
-                  onClick={() => openTab(scopeFolders[0])}
-                >
-                  +
-                </button>
-              )}
-            </div>
-
-            <div className="term-area">
-              {tabs.map((tab) => (
-                <TerminalView
-                  key={`${tab.id}:${tab.generation}`}
-                  tabId={tab.id}
-                  cwd={tab.cwd}
-                  command={tab.command}
-                  active={tab.id === activeTabId}
-                  onSession={handleSession}
-                  onExit={handleExit}
+            <div className="main-body">
+              {explorerOpen && scopeFolders.length > 0 && (
+                <FileTree
+                  folders={scopeFolders}
+                  focusToken={searchFocus}
+                  onOpenTerminal={(folder, cwd, title) => openTab(folder, undefined, title, cwd)}
                 />
-              ))}
-
-              {visibleTabs.length === 0 && (
-                <div className="empty">
-                  <div className="empty-inner">
-                    <div className="empty-icon">▸</div>
-                    <h2>Sin terminales abiertas</h2>
-                    {scopeFolders.length === 0 ? (
-                      <p>
-                        Este proyecto todavía no tiene carpetas. Agregá una con <b>+ Carpeta</b> o
-                        arrastrá una carpeta del sidebar hasta el proyecto.
-                      </p>
-                    ) : (
-                      <>
-                        <p>
-                          Abrí una shell en <b>{headerTitle}</b> o corré un script del panel de
-                          arriba.
-                        </p>
-                        <button
-                          className="btn primary"
-                          onClick={() =>
-                            activeProject ? openAllTerminals() : openTab(scopeFolders[0])
-                          }
-                        >
-                          {activeProject
-                            ? `Abrir terminal en las ${scopeFolders.length} carpetas`
-                            : 'Abrir terminal'}
-                        </button>
-                      </>
-                    )}
-                  </div>
-                </div>
               )}
 
-              {activeTab && activeTab.exitCode !== null && (
-                <div className="term-exit">
-                  <span>
-                    El proceso terminó con código <span className="code">{activeTab.exitCode}</span>
-                  </span>
-                  <button className="btn sm" onClick={() => restartTab(activeTab.id)}>
-                    Reiniciar
-                  </button>
-                  <button className="btn ghost sm" onClick={() => closeTab(activeTab.id)}>
-                    Cerrar pestaña
-                  </button>
+              <div className="term-column">
+                <div className="tabs">
+                  {visibleTabs.map((tab) => (
+                    <div
+                      key={tab.id}
+                      className={`tab${tab.id === activeTabId ? ' active' : ''}${
+                        tab.exitCode !== null ? ' exited' : ''
+                      }`}
+                      role="button"
+                      tabIndex={0}
+                      title={`${tab.folderName} · ${tab.command ?? tab.title}`}
+                      onClick={() => setActiveTabByScope((prev) => ({ ...prev, [key]: tab.id }))}
+                      onKeyDown={(event) => {
+                        if (event.key === 'Enter')
+                          setActiveTabByScope((prev) => ({ ...prev, [key]: tab.id }))
+                      }}
+                    >
+                      <span className="tab-dot" />
+                      {activeProject && <span className="tab-scope">{tab.folderName}</span>}
+                      <span className="tab-title">{tab.title}</span>
+                      <button
+                        className="tab-close"
+                        title="Cerrar pestaña"
+                        onClick={(event) => {
+                          event.stopPropagation()
+                          closeTab(tab.id)
+                        }}
+                      >
+                        ×
+                      </button>
+                    </div>
+                  ))}
+                  {scopeFolders.length > 0 && (
+                    <button
+                      className="tab-add"
+                      title="Nueva terminal"
+                      onClick={() => openTab(scopeFolders[0])}
+                    >
+                      +
+                    </button>
+                  )}
                 </div>
-              )}
+
+                <div className="term-area">
+                  {tabs.map((tab) => (
+                    <TerminalView
+                      key={`${tab.id}:${tab.generation}`}
+                      tabId={tab.id}
+                      cwd={tab.cwd}
+                      command={tab.command}
+                      active={tab.id === activeTabId}
+                      onSession={handleSession}
+                      onExit={handleExit}
+                    />
+                  ))}
+
+                  {visibleTabs.length === 0 && (
+                    <div className="empty">
+                      <div className="empty-inner">
+                        <div className="empty-icon">▸</div>
+                        <h2>Sin terminales abiertas</h2>
+                        {scopeFolders.length === 0 ? (
+                          <p>
+                            Este proyecto todavía no tiene carpetas. Agregá una con <b>+ Carpeta</b>{' '}
+                            o arrastrá una carpeta del sidebar hasta el proyecto.
+                          </p>
+                        ) : (
+                          <>
+                            <p>
+                              Abrí una shell en <b>{headerTitle}</b>, buscá un archivo en el
+                              explorador de la izquierda o corré un script desde <b>Ver scripts</b>.
+                            </p>
+                            <button
+                              className="btn primary"
+                              onClick={() =>
+                                activeProject ? openAllTerminals() : openTab(scopeFolders[0])
+                              }
+                            >
+                              {activeProject
+                                ? `Abrir terminal en las ${scopeFolders.length} carpetas`
+                                : 'Abrir terminal'}
+                            </button>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                  {activeTab && activeTab.exitCode !== null && (
+                    <div className="term-exit">
+                      <span>
+                        El proceso terminó con código{' '}
+                        <span className="code">{activeTab.exitCode}</span>
+                      </span>
+                      <button className="btn sm" onClick={() => restartTab(activeTab.id)}>
+                        Reiniciar
+                      </button>
+                      <button className="btn ghost sm" onClick={() => closeTab(activeTab.id)}>
+                        Cerrar pestaña
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </div>
             </div>
           </>
         ) : (
@@ -556,10 +618,10 @@ export default function App(): React.JSX.Element {
               <div className="empty-icon">📁</div>
               <h2>Agregá tu primera carpeta</h2>
               <p>
-                Elegí las carpetas de tus proyectos y desde acá vas a poder abrir una terminal en
-                cada una o correr sus scripts de node con un click. Si un proyecto tiene varias
-                carpetas (API, cliente, workers), agrupalas en un <b>proyecto</b> y abrí todas sus
-                terminales de una vez.
+                Elegí las carpetas de tus proyectos y desde acá vas a poder recorrer sus archivos,
+                buscar por nombre o por contenido, abrir una terminal en cada una y correr sus
+                scripts con un click. Si un proyecto tiene varias carpetas (API, cliente, workers),
+                agrupalas en un <b>proyecto</b> y abrí todas sus terminales de una vez.
               </p>
               <div className="empty-actions">
                 <button className="btn primary" onClick={() => void addFolder(null)}>
@@ -573,6 +635,10 @@ export default function App(): React.JSX.Element {
           </div>
         )}
       </main>
+
+      {quickOpen && scopeFolders.length > 0 && (
+        <QuickSearch folders={scopeFolders} onClose={() => setQuickOpen(false)} />
+      )}
 
       {editingTask !== undefined && activeProject && (
         <TaskEditor
