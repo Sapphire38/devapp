@@ -76,11 +76,30 @@ export default function TerminalView({
     const fit = new FitAddon()
     term.loadAddon(fit)
     term.loadAddon(new WebLinksAddon())
-    term.open(host)
     termRef.current = term
     fitRef.current = fit
 
-    const safeFit = (): void => {
+    /**
+     * El host de una pestaña inactiva está en `display:none` y mide 0: sin esto
+     * la terminal se quedaba con el 80x24 por defecto de xterm y todo el output
+     * se escribía a 80 columnas. Al reflowear recién al abrir la pestaña, el
+     * buffer inflado ya se había pasado del scrollback y las primeras líneas se
+     * perdían para siempre.
+     *
+     * Destapamos el host y lo volvemos a tapar dentro del mismo tick: el
+     * browser no llega a pintar el estado intermedio, así que no hay parpadeo.
+     */
+    const withLayout = (fn: () => void): void => {
+      const wasHidden = host.hidden
+      if (wasHidden) host.hidden = false
+      try {
+        fn()
+      } finally {
+        if (wasHidden) host.hidden = true
+      }
+    }
+
+    const fitNow = (): void => {
       if (host.clientWidth < 2 || host.clientHeight < 2) return
       try {
         fit.fit()
@@ -88,7 +107,13 @@ export default function TerminalView({
         /* el contenedor puede estar oculto durante un cambio de pestaña */
       }
     }
-    safeFit()
+    const safeFit = (): void => withLayout(fitNow)
+
+    // `open` es lo que mide el tamaño de celda, así que también va con layout.
+    withLayout(() => {
+      term.open(host)
+      fitNow()
+    })
 
     // Cmd/Ctrl+K limpia la pantalla, como en cualquier terminal.
     term.attachCustomKeyEventHandler((event) => {
@@ -146,8 +171,12 @@ export default function TerminalView({
         term.write(`\r\n\x1b[31m[devapp] ${err.message}\x1b[0m\r\n`)
       })
 
+    // Observamos el contenedor y no el host: el de una pestaña de fondo está
+    // oculto y nunca cambia de tamaño, así que se perdería los resize de la
+    // ventana y su pty seguiría con el ancho viejo. El host es `absolute`, así
+    // que destaparlo para medir no altera al contenedor y no hay loop.
     const observer = new ResizeObserver(safeFit)
-    observer.observe(host)
+    observer.observe(host.parentElement ?? host)
 
     return () => {
       disposed = true

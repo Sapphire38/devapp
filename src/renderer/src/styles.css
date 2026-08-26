@@ -1520,6 +1520,15 @@ input {
   height: 100%;
 }
 
+/* xterm v6 scrollea con su propio overlay (.xterm-scrollable-element). El
+   `overflow-y: scroll` que trae su CSS en el viewport es vestigial —nunca
+   tiene nada que scrollear— pero igual reservaba 9px por la scrollbar global
+   de abajo: un canal siempre vacío al lado de la barra que sí funciona. */
+.term-host .xterm-viewport::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+}
+
 .term-exit {
   position: absolute;
   left: 0;
