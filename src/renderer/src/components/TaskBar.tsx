@@ -36,7 +36,7 @@ export default function TaskBar({
                 className="task-run"
                 onClick={() => onRun(task)}
                 title={task.steps
-                  .map((s) => `${folderName(s.folderId)}: ${s.command}`)
+                  .map((s) => `${folderName(s.folderId)}${s.relDir ? `/${s.relDir}` : ''}: ${s.command}`)
                   .join('\n')}
               >
                 <span className="play">▶</span>

@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { runNodeFileCommand, runScriptCommand } from '../../../shared/commands'
-import type { Folder, PackageManager, ProjectInfo } from '../../../shared/types'
+import { ROOT_REL_DIR, scriptSources } from '../../../shared/scriptSources'
+import type { Folder, ProjectInfo } from '../../../shared/types'
 
 export interface PanelEntry {
   folder: Folder
@@ -13,55 +14,6 @@ interface Props {
   showFolderNames: boolean
   onRun: (folder: Folder, command: string, title: string, cwd?: string) => void
   onOpenTerminal: (folder: Folder) => void
-}
-
-/** La raíz o una subcarpeta con package.json: lo que se ejecuta desde una pestaña. */
-interface ScriptSource {
-  /** Ruta relativa a la carpeta abierta; `''` es la raíz. */
-  relDir: string
-  label: string
-  /** Ruta desde la carpeta abierta hasta el package.json. */
-  location: string
-  cwd: string
-  packageManager: PackageManager | null
-  scripts: [string, string][]
-  nodeFiles: string[]
-}
-
-const ROOT_REL_DIR = ''
-
-/** Pestaña con la carpeta padre del package.json; si está más abajo, `…/carpeta`. */
-function subpackageLabel(relDir: string): string {
-  const segments = relDir.split('/')
-  const parentName = segments[segments.length - 1]
-  return segments.length > 1 ? `…/${parentName}` : parentName
-}
-
-function scriptSources(folder: Folder, info: ProjectInfo | null): ScriptSource[] {
-  if (!info) return []
-  const sources: ScriptSource[] = info.subpackages.map((pkg) => ({
-    relDir: pkg.relDir,
-    label: subpackageLabel(pkg.relDir),
-    location: `${folder.name}/${pkg.relDir}`,
-    cwd: pkg.path,
-    packageManager: pkg.packageManager,
-    scripts: Object.entries(pkg.scripts),
-    nodeFiles: pkg.nodeFiles
-  }))
-  const rootScripts = Object.entries(info.scripts)
-  if (rootScripts.length === 0 && info.nodeFiles.length === 0) return sources
-  return [
-    {
-      relDir: ROOT_REL_DIR,
-      label: folder.name,
-      location: folder.name,
-      cwd: folder.path,
-      packageManager: info.packageManager,
-      scripts: rootScripts,
-      nodeFiles: info.nodeFiles
-    },
-    ...sources
-  ]
 }
 
 function FolderBlock({
