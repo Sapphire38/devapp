@@ -69,6 +69,83 @@ function killProcessTree(pid: number, fallback: () => void): void {
 const sessions = new Map<string, Session>()
 let counter = 0
 
+/**
+ * Copia de la salida de cada sesión para que el bridge local pueda leerla: el
+ * scrollback real vive en xterm, dentro del renderer, y desde afuera no se ve.
+ */
+const MAX_OUTPUT_BYTES = 256 * 1024
+/** Sesiones terminadas cuya salida se conserva, para poder leer por qué murieron. */
+const MAX_RETAINED_SESSIONS = 20
+
+interface OutputBuffer {
+  chunks: string[]
+  bytes: number
+  /** Si ya se descartó salida vieja: lo que se lee no es todo lo que hubo. */
+  dropped: boolean
+  running: boolean
+  exitCode: number | null
+  endedAt: number
+}
+
+const outputs = new Map<string, OutputBuffer>()
+
+function record(id: string, data: string): void {
+  const buffer = outputs.get(id)
+  if (!buffer) return
+  buffer.chunks.push(data)
+  buffer.bytes += data.length
+  while (buffer.bytes > MAX_OUTPUT_BYTES && buffer.chunks.length > 1) {
+    buffer.bytes -= buffer.chunks.shift()?.length ?? 0
+    buffer.dropped = true
+  }
+  // Un volcado de una sola pieza más grande que el tope no se puede descartar
+  // entero sin perder lo último, que es lo que interesa: se recorta por el final.
+  const only = buffer.chunks[0]
+  if (buffer.chunks.length === 1 && only.length > MAX_OUTPUT_BYTES) {
+    buffer.chunks[0] = only.slice(-MAX_OUTPUT_BYTES)
+    buffer.bytes = buffer.chunks[0].length
+    buffer.dropped = true
+  }
+}
+
+/** Deja morir las salidas viejas: sin esto una sesión corta por minuto crece sin techo. */
+function pruneRetained(): void {
+  const ended = [...outputs.entries()].filter(([, buffer]) => !buffer.running)
+  if (ended.length <= MAX_RETAINED_SESSIONS) return
+  ended
+    .sort((a, b) => a[1].endedAt - b[1].endedAt)
+    .slice(0, ended.length - MAX_RETAINED_SESSIONS)
+    .forEach(([id]) => outputs.delete(id))
+}
+
+function markEnded(id: string, exitCode: number | null): void {
+  const buffer = outputs.get(id)
+  if (!buffer) return
+  buffer.running = false
+  buffer.exitCode = exitCode
+  buffer.endedAt = Date.now()
+  pruneRetained()
+}
+
+export interface SessionOutput {
+  text: string
+  running: boolean
+  exitCode: number | null
+  /** `true` si el buffer ya descartó salida vieja por el tope de tamaño. */
+  truncated: boolean
+}
+
+export function readOutput(id: string): SessionOutput | null {
+  const buffer = outputs.get(id)
+  if (!buffer) return null
+  return {
+    text: buffer.chunks.join(''),
+    running: buffer.running,
+    exitCode: buffer.exitCode,
+    truncated: buffer.dropped
+  }
+}
+
 function nextId(): string {
   counter += 1
   return `t${counter}_${Date.now().toString(36)}`
@@ -115,7 +192,20 @@ export function createSession(
   const env = buildEnv()
   const { file, args } = defaultShell()
 
+  outputs.set(id, {
+    chunks: [],
+    bytes: 0,
+    dropped: false,
+    running: true,
+    exitCode: null,
+    endedAt: 0
+  })
+
+  // Único punto por el que sale todo: engancharse acá evita que un camino
+  // (pty o fallback) quede sin registrar.
   const send = (channel: string, payload: unknown): void => {
+    if (channel === 'session:data') record(id, (payload as { data: string }).data)
+    if (channel === 'session:exit') markEnded(id, (payload as { exitCode: number }).exitCode)
     if (!sender.isDestroyed()) sender.send(channel, payload)
   }
 
@@ -210,9 +300,11 @@ export function killSession(id: string): void {
   if (!session) return
   session.kill()
   sessions.delete(id)
+  markEnded(id, null)
 }
 
 export function killAllSessions(): void {
   for (const session of sessions.values()) session.kill()
   sessions.clear()
+  outputs.clear()
 }
