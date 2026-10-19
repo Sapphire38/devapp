@@ -2,6 +2,12 @@ import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron'
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import {
+  abortRendererRequests,
+  resolveRendererResponse,
+  startBridge,
+  stopBridge
+} from './bridge'
 import { readDirectory, searchFiles } from './files'
 import { buildMenu } from './menu'
 import { isDirectory, isDirectoryAsync, normalizeFolderPath } from './paths'
@@ -30,6 +36,7 @@ import {
   resizeSession,
   writeSession
 } from './terminals'
+import type { BridgeResponse } from '../shared/bridge'
 import type {
   ExternalFolderOpened,
   FileSearchOptions,
@@ -73,10 +80,12 @@ function createWindow(): void {
   // Recargar (o el HMR) reinicia el renderer: hasta que vuelva a avisar, se encola.
   mainWindow.webContents.on('did-start-loading', () => {
     rendererListening = false
+    abortRendererRequests('La ventana se recargó antes de contestar')
   })
   mainWindow.on('closed', () => {
     mainWindow = null
     rendererListening = false
+    abortRendererRequests('La ventana se cerró antes de contestar')
     // Cerrar la ventana descarta las pestañas: sus procesos no deben sobrevivir.
     killAllSessions()
   })
@@ -255,6 +264,10 @@ function registerIpc(): void {
     resizeSession(id, cols, rows)
   )
   ipcMain.on('session:kill', (_event, id: string) => killSession(id))
+
+  ipcMain.on('bridge:response', (_event, response: BridgeResponse) =>
+    resolveRendererResponse(response)
+  )
 }
 
 function startApp(): void {
@@ -280,6 +293,7 @@ function startApp(): void {
     registerIpc()
     buildMenu()
     createWindow()
+    startBridge(liveMainWindow)
 
     app.on('activate', () => {
       if (BrowserWindow.getAllWindows().length === 0) createWindow()
@@ -313,6 +327,7 @@ app.on('before-quit', (event) => {
   if (shuttingDown) return
   shuttingDown = true
   event.preventDefault()
+  stopBridge()
   killAllSessions()
   setTimeout(() => app.exit(0), 300)
 })
@@ -320,6 +335,7 @@ app.on('before-quit', (event) => {
 // Cierres que no pasan por before-quit (Ctrl+C en desarrollo, SIGTERM del SO).
 for (const signal of ['SIGINT', 'SIGTERM', 'SIGHUP'] as const) {
   process.on(signal, () => {
+    stopBridge()
     killAllSessions()
     setTimeout(() => process.exit(0), 300)
   })

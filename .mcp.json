@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "selene": {
+      "command": "node",
+      "args": ["./mcp/selene-mcp.mjs"]
+    }
+  }
+}

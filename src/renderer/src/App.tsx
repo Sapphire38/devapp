@@ -8,6 +8,7 @@ import TaskEditor from './components/TaskEditor'
 import TerminalView from './components/TerminalView'
 import { subpackageCwd } from '../../shared/scriptSources'
 import type { AppInfo } from '../../shared/api'
+import type { BridgeRequest, BridgeTab } from '../../shared/bridge'
 import type {
   Folder,
   ProjectInfo,
@@ -337,6 +338,162 @@ export default function App(): React.JSX.Element {
 
   const handleExit = useCallback((tabId: string, exitCode: number) => {
     setTabs((prev) => prev.map((t) => (t.id === tabId ? { ...t, exitCode, sessionId: null } : t)))
+  }, [])
+
+  /* ---------- bridge local (servidor MCP) ---------- */
+
+  const asString = (value: unknown, name: string): string => {
+    if (typeof value !== 'string' || value.length === 0) {
+      throw new Error(`Falta el parámetro "${name}"`)
+    }
+    return value
+  }
+
+  const asOptionalString = (value: unknown): string | undefined =>
+    typeof value === 'string' && value.length > 0 ? value : undefined
+
+  /**
+   * Espejo de `tabs` para el bridge. Una consulta que llega entre el `setTabs` y
+   * el re-render tiene que ver la pestaña recién creada: con el estado de React
+   * sola, `tabs.open` devolvía un id que `tabs.list` todavía no conocía.
+   */
+  const tabsRef = useRef<Tab[]>(tabs)
+  tabsRef.current = tabs
+
+  const toBridgeTab = (tab: Tab): BridgeTab => ({
+    id: tab.id,
+    title: tab.title,
+    folderId: tab.folderId,
+    folderName: tab.folderName,
+    cwd: tab.cwd,
+    command: tab.command,
+    taskId: tab.taskId,
+    sessionId: tab.sessionId,
+    exitCode: tab.exitCode,
+    running: tab.exitCode === null && tab.sessionId !== null
+  })
+
+  const handleBridgeRequest = useCallback(
+    async (request: BridgeRequest): Promise<unknown> => {
+      const params = request.params ?? {}
+
+      const matches = (list: Folder[]): Folder | undefined => {
+        const folderId = asOptionalString(params.folderId)
+        const path = asOptionalString(params.path)
+        return folderId
+          ? list.find((f) => f.id === folderId)
+          : list.find((f) => f.path === path)
+      }
+
+      const findFolder = async (): Promise<Folder> => {
+        const known = matches(workspace.folders)
+        if (known) return known
+        // Una carpeta agregada por el bridge hace un instante puede no haber
+        // llegado todavía a este render: la fuente de verdad es el main.
+        const fresh = await window.api.workspace.get()
+        const folder = matches(fresh.folders)
+        if (folder) {
+          applyWorkspace(fresh)
+          return folder
+        }
+        throw new Error(
+          asOptionalString(params.folderId)
+            ? `No hay ninguna carpeta con id ${params.folderId}`
+            : `La carpeta ${asOptionalString(params.path) ?? '(sin indicar)'} no está en el workspace: agregala primero`
+        )
+      }
+
+      const findTab = (): Tab => {
+        const tabId = asString(params.tabId, 'tabId')
+        const tab = tabsRef.current.find((t) => t.id === tabId)
+        if (!tab) throw new Error(`No hay ninguna pestaña con id ${tabId}`)
+        return tab
+      }
+
+      switch (request.method) {
+        case 'tabs.list':
+          return tabsRef.current.map(toBridgeTab)
+
+        case 'tabs.open': {
+          const folder = await findFolder()
+          const command = asOptionalString(params.command)
+          const tab = makeTab(folder, command, asOptionalString(params.title) ?? command, asOptionalString(params.cwd))
+          setTabs((prev) => {
+            const next = [...prev, tab]
+            tabsRef.current = next
+            return next
+          })
+          // La pestaña queda activa en el scope de SU carpeta, no en el que el
+          // usuario esté mirando: abrir algo desde afuera no le mueve la vista.
+          setActiveTabByScope((prev) => {
+            const next = { ...prev, [scopeKey({ type: 'folder', id: folder.id })]: tab.id }
+            if (folder.projectId) {
+              next[scopeKey({ type: 'project', id: folder.projectId })] = tab.id
+            }
+            return next
+          })
+          if (params.focus === true) setSelection({ type: 'folder', id: folder.id })
+          return toBridgeTab(tab)
+        }
+
+        case 'tabs.close':
+          closeTab(findTab().id)
+          return { ok: true }
+
+        case 'tabs.restart':
+          restartTab(findTab().id)
+          return { ok: true }
+
+        case 'task.run': {
+          const wanted = asString(params.task, 'task')
+          const task = workspace.tasks.find((t) => t.id === wanted || t.name === wanted)
+          if (!task) throw new Error(`No hay ningún conjunto llamado ${wanted}`)
+          runTask(task)
+          return { ok: true, taskId: task.id }
+        }
+
+        case 'task.stop': {
+          const wanted = asString(params.task, 'task')
+          const task = workspace.tasks.find((t) => t.id === wanted || t.name === wanted)
+          if (!task) throw new Error(`No hay ningún conjunto llamado ${wanted}`)
+          stopTask(task.id)
+          return { ok: true, taskId: task.id }
+        }
+
+        default:
+          throw new Error(`Método no soportado en la ventana: ${request.method}`)
+      }
+    },
+    [
+      workspace.folders,
+      workspace.tasks,
+      applyWorkspace,
+      makeTab,
+      closeTab,
+      restartTab,
+      runTask,
+      stopTask
+    ]
+  )
+
+  // El handler vive en un ref para suscribirse una sola vez: re-registrar el
+  // listener en cada cambio de pestañas abriría una ventana sin oyente.
+  const bridgeHandlerRef = useRef(handleBridgeRequest)
+  bridgeHandlerRef.current = handleBridgeRequest
+
+  useEffect(() => {
+    return window.api.onBridgeRequest((request) => {
+      bridgeHandlerRef
+        .current(request)
+        .then((result) => window.api.sendBridgeResponse({ id: request.id, ok: true, result }))
+        .catch((error: unknown) =>
+          window.api.sendBridgeResponse({
+            id: request.id,
+            ok: false,
+            error: error instanceof Error ? error.message : String(error)
+          })
+        )
+    })
   }, [])
 
   /* ---------- menú y drag & drop ---------- */
