@@ -1,3 +1,4 @@
+import type { BridgeRequest, BridgeResponse } from './bridge'
 import type {
   DirEntry,
   ExternalFolderOpened,
@@ -78,6 +79,11 @@ export interface DevAppApi {
 
   /** Avisa al main que el renderer ya escucha: recién ahí se le entregan las carpetas pendientes. */
   notifyExternalReady(): void
+
+  /** Consulta del bridge local que solo la ventana puede contestar (pestañas y conjuntos). */
+  onBridgeRequest(listener: (request: BridgeRequest) => void): () => void
+
+  sendBridgeResponse(response: BridgeResponse): void
 
   session: {
     create(options: SessionOptions): Promise<SessionCreated>

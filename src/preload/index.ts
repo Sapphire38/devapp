@@ -1,5 +1,6 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import type { AppInfo, DevAppApi, MenuAction } from '../shared/api'
+import type { BridgeRequest, BridgeResponse } from '../shared/bridge'
 import type {
   DirEntry,
   ExternalFolderOpened,
@@ -77,6 +78,15 @@ const api: DevAppApi = {
   },
 
   notifyExternalReady: (): void => ipcRenderer.send('external:ready'),
+
+  onBridgeRequest: (listener: (request: BridgeRequest) => void): (() => void) => {
+    const handler = (_e: unknown, request: BridgeRequest): void => listener(request)
+    ipcRenderer.on('bridge:request', handler)
+    return () => ipcRenderer.removeListener('bridge:request', handler)
+  },
+
+  sendBridgeResponse: (response: BridgeResponse): void =>
+    ipcRenderer.send('bridge:response', response),
 
   session: {
     create: (options: SessionOptions): Promise<SessionCreated> =>

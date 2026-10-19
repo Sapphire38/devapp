@@ -19,6 +19,17 @@ correr scripts de node con un click.
 - Detecta la rama de git y la refresca cuando volvés a la ventana.
 - **Al cerrar la app se matan sus terminales**, incluidos los procesos hijos: un `npm run dev` no queda dando vueltas ocupando el puerto.
 
+## Control desde un agente (MCP)
+
+Con la app abierta, un agente puede manejarla por el servidor MCP de
+[`mcp/`](mcp/README.md): ver el workspace, abrir terminales, correr scripts,
+leer su salida y frenarlos. Habla con la app por un socket local con permisos
+`0600` dentro de la carpeta de datos — no abre ningún puerto.
+
+```bash
+claude mcp add selene --scope user -- node "$PWD/mcp/selene-mcp.mjs"
+```
+
 ## Desarrollo
 
 ```bash
