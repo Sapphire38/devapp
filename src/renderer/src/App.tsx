@@ -6,6 +6,7 @@ import Sidebar from './components/Sidebar'
 import TaskBar from './components/TaskBar'
 import TaskEditor from './components/TaskEditor'
 import TerminalView from './components/TerminalView'
+import { subpackageCwd } from '../../shared/scriptSources'
 import type { AppInfo } from '../../shared/api'
 import type { BridgeRequest, BridgeTab } from '../../shared/bridge'
 import type {
@@ -288,7 +289,10 @@ export default function App(): React.JSX.Element {
       const created = task.steps.flatMap((step) => {
         const folder = workspace.folders.find((f) => f.id === step.folderId)
         if (!folder) return []
-        return [{ ...makeTab(folder, step.command, step.label ?? step.command), taskId: task.id }]
+        const cwd = subpackageCwd(folder.path, step.relDir)
+        return [
+          { ...makeTab(folder, step.command, step.label ?? step.command, cwd), taskId: task.id }
+        ]
       })
       pushTabs(created)
     },

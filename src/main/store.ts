@@ -63,6 +63,10 @@ function read(): Workspace {
 /**
  * Descarta pasos que apuntan a carpetas borradas o que ya no pertenecen al
  * proyecto del conjunto, y conjuntos que quedaron sin pasos o sin proyecto.
+ *
+ * El subpaquete de un paso no se revisa: esto corre en cada escritura del
+ * workspace, y una rama sin ese paquete o un `checkout` a medias borraría el
+ * paso para siempre. Si no está, el paso falla en su terminal, a la vista.
  */
 function pruneTasks(data: Workspace): void {
   const folderById = new Map(data.folders.map((f) => [f.id, f]))
@@ -238,13 +242,26 @@ export function setProjectCollapsed(projectId: string, collapsed: boolean): Work
 
 /* ---------- conjuntos de scripts ---------- */
 
+/**
+ * Subcarpeta dentro de la carpeta del paso, o `undefined` para la raíz. Una
+ * ruta absoluta o con `..` saldría de la carpeta: se ignora y el paso corre en
+ * la raíz, que es lo mismo que hacen los pasos guardados sin este campo.
+ */
+function sanitizeRelDir(relDir: unknown): string | undefined {
+  if (typeof relDir !== 'string') return undefined
+  const clean = relDir.trim().replace(/\\/g, '/').replace(/^\/+|\/+$/g, '')
+  if (!clean || /^[a-zA-Z]:/.test(clean) || clean.split('/').includes('..')) return undefined
+  return clean
+}
+
 function sanitizeSteps(steps: TaskStep[]): TaskStep[] {
   return (Array.isArray(steps) ? steps : [])
     .filter((step) => step && typeof step.folderId === 'string' && typeof step.command === 'string')
     .map((step) => ({
       folderId: step.folderId,
       command: step.command.trim(),
-      label: step.label?.trim() || undefined
+      label: step.label?.trim() || undefined,
+      relDir: sanitizeRelDir(step.relDir)
     }))
     .filter((step) => step.command.length > 0)
 }

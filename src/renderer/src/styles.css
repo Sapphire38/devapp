@@ -619,6 +619,14 @@ input {
   outline-offset: -2px;
 }
 
+/* Cuántos pasos del conjunto ya se eligieron en esa pestaña. */
+.pkg-tab-count {
+  margin-left: 5px;
+  color: var(--green);
+  font-size: 10px;
+  font-weight: 700;
+}
+
 .chips {
   display: flex;
   flex-wrap: wrap;

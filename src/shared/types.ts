@@ -28,6 +28,13 @@ export interface TaskStep {
   command: string
   /** Nombre corto para la pestaña; por defecto, el comando. */
   label?: string
+  /**
+   * Subpaquete donde corre, relativo a la carpeta (ej. `packages/core`). Sin
+   * esto —los pasos guardados antes de que existiera— corre en la raíz. Se
+   * guarda relativo y no absoluto para que siga valiendo si la carpeta se
+   * mueve, igual que el paso referencia la carpeta por id y no por ruta.
+   */
+  relDir?: string
 }
 
 /**
